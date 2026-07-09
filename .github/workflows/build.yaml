@@ -10,6 +10,8 @@ permissions:
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+'
@@ -22,6 +24,38 @@ env:
   SQLX_OFFLINE: true
   
 jobs:
+
+  prepare-release:
+    name: Prepare release tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.SUBMODULES_TOKEN }}
+
+      - name: Resolve or create release tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed -E 's/version = "(.*)"/\1/')
+            TAG="v${VERSION}"
+            if ! git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git tag "${TAG}"
+              git push origin "${TAG}"
+            fi
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
 
   # binary build
   build:
@@ -79,8 +113,9 @@ jobs:
   release:
 
     name: Github release
-    needs: 
+    needs:
       - build
+      - prepare-release
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -113,6 +148,7 @@ jobs:
       - name: Create Release (${{ matrix.job.os }} - (${{ matrix.job.name }})
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare-release.outputs.tag }}
           draft: true
           files: ${{ matrix.job.name }}/bgdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip
 
