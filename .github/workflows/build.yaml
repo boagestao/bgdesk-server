@@ -10,13 +10,14 @@ permissions:
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+-[0-9]+'
+  workflow_run:
+    workflows: ["tag"]
+    types: [completed]
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,21 +25,24 @@ env:
   SQLX_OFFLINE: true
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.sha }}
+  group: build-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
 
   prepare-release:
     name: Prepare release tag
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      commit_sha: ${{ steps.tag.outputs.commit_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
           submodules: recursive
           token: ${{ secrets.SUBMODULES_TOKEN }}
 
@@ -52,9 +56,12 @@ jobs:
             TAG="v${VERSION}"
           fi
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "commit_sha=${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}" >> "${GITHUB_OUTPUT}"
 
   build:
     name: Build - ${{ matrix.job.name }}
+    needs: prepare-release
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -68,6 +75,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare-release.outputs.commit_sha }}
           submodules: recursive
           token: ${{ secrets.SUBMODULES_TOKEN }}
 
@@ -104,6 +112,7 @@ jobs:
     needs:
       - build
       - prepare-release
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -135,7 +144,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ needs.prepare-release.outputs.commit_sha }}
           make_latest: true
           draft: false
           fail_on_unmatched_files: true

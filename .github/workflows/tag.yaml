@@ -1,0 +1,47 @@
+name: tag
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tag-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  tag:
+    name: Create release tag
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Create or move release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed -E 's/version = "(.*)"/\1/')
+          TAG="v${VERSION}"
+          HEAD_SHA="${{ github.sha }}"
+
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            EXISTING=$(git rev-parse "refs/tags/${TAG}")
+            if [ "$EXISTING" = "$HEAD_SHA" ]; then
+              echo "Tag ${TAG} already points to ${HEAD_SHA}"
+              exit 0
+            fi
+            echo "Moving tag ${TAG} from ${EXISTING} to ${HEAD_SHA}"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}"
+          fi
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${HEAD_SHA}"
+          echo "Created tag ${TAG} at ${HEAD_SHA}"
