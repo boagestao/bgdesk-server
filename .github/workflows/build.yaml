@@ -26,17 +26,17 @@ env:
 concurrency:
   group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: true
-  
+
 jobs:
 
   prepare-release:
     name: Prepare release tag
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: recursive
@@ -53,11 +53,9 @@ jobs:
           fi
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
 
-  # binary build
   build:
-
     name: Build - ${{ matrix.job.name }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -65,38 +63,34 @@ jobs:
           - { name: "amd64",   target: "x86_64-unknown-linux-musl" }
           - { name: "arm64v8", target: "aarch64-unknown-linux-musl" }
           - { name: "armv7",   target: "armv7-unknown-linux-musleabihf" }
-          #- { name: "amd64fb",    target: "x86_64-unknown-freebsd" }
 
     steps:
-      
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.SUBMODULES_TOKEN }}
 
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.90"
-          override: true
-          default: true
+          targets: ${{ matrix.job.target }}
           components: rustfmt
-          profile: minimal
-          target: ${{ matrix.job.target }}
+
+      - name: Install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --all-features --target=${{ matrix.job.target }}
-          use-cross: true  
+        run: cross build --release --all-features --target=${{ matrix.job.target }}
 
       - name: Exec chmod
         run: chmod -v a+x target/${{ matrix.job.target }}/release/*
 
       - name: Publish Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-linux-${{ matrix.job.name }}
           path: |
@@ -105,47 +99,47 @@ jobs:
             target/${{ matrix.job.target }}/release/bgdesk-utils
           if-no-files-found: error
 
-  # github (draft) release with all binaries
   release:
-
     name: Github release
     needs:
       - build
       - prepare-release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        job:
-          - { os: "linux", name: "amd64", suffix: "" }
-          - { os: "linux", name: "arm64v8", suffix: "" }
-          - { os: "linux", name: "armv7", suffix: "" }
-          #- { os: "linux", name: "amd64fb", suffix: "" }
-          
     steps:
-
-      - name: Download binaries (${{ matrix.job.os }} - ${{ matrix.job.name }})
-        uses: actions/download-artifact@v4
+      - name: Download all binaries
+        uses: actions/download-artifact@v8
         with:
-          name: binaries-${{ matrix.job.os }}-${{ matrix.job.name }}
-          path: ${{ matrix.job.name }}
+          pattern: binaries-linux-*
+          path: artifacts
+          merge-multiple: false
 
-      - name: Exec chmod
-        run: chmod -v a+x ${{ matrix.job.name }}/*
-
-      - name: Pack files (${{ matrix.job.os }} - ${{ matrix.job.name }})
+      - name: Pack release archives
         run: |
-          sudo apt update
-          DEBIAN_FRONTEND=noninteractive sudo apt install -y zip
-          zip ${{ matrix.job.name }}/bgdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip ${{ matrix.job.name }}/*
+          mkdir -p dist
+          for arch in amd64 arm64v8 armv7; do
+            chmod -v a+x "artifacts/binaries-linux-${arch}"/*
+            zip -j "dist/bgdesk-server-linux-${arch}.zip" "artifacts/binaries-linux-${arch}"/*
+          done
+          ls -la dist/
 
-      - name: Create Release (${{ matrix.job.os }} - (${{ matrix.job.name }})
-        uses: softprops/action-gh-release@v2
+      - name: Delete existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: |
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          draft: true
-          files: ${{ matrix.job.name }}/bgdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip
-
+          make_latest: true
+          draft: false
+          fail_on_unmatched_files: true
+          files: |
+            dist/bgdesk-server-linux-amd64.zip
+            dist/bgdesk-server-linux-arm64v8.zip
+            dist/bgdesk-server-linux-armv7.zip
