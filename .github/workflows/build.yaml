@@ -22,14 +22,16 @@ env:
   CARGO_TERM_COLOR: always
   # sqlx compile-time macros use committed sqlx-data.json (no DB at build time)
   SQLX_OFFLINE: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
   
 jobs:
 
   prepare-release:
     name: Prepare release tag
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
@@ -40,7 +42,7 @@ jobs:
           submodules: recursive
           token: ${{ secrets.SUBMODULES_TOKEN }}
 
-      - name: Resolve or create release tag
+      - name: Resolve release tag
         id: tag
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -48,12 +50,6 @@ jobs:
           else
             VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed -E 's/version = "(.*)"/\1/')
             TAG="v${VERSION}"
-            if ! git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git tag "${TAG}"
-              git push origin "${TAG}"
-            fi
           fi
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
 
@@ -149,6 +145,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           draft: true
           files: ${{ matrix.job.name }}/bgdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip
 
