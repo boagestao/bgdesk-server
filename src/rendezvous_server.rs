@@ -495,9 +495,9 @@ impl RendezvousServer {
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
-                    if hbb_common::config::is_cliente_outbound_relay(&rf.licence_key, &rf.id) {
+                    if hbb_common::config::is_legacy_outbound_relay(&rf.licence_key, &rf.id) {
                         log::warn!(
-                            "Relay request blocked for cliente outbound from {} for peer {}",
+                            "Relay request blocked for legacy outbound from {} for peer {}",
                             addr,
                             rf.id
                         );
@@ -695,15 +695,15 @@ impl RendezvousServer {
         ws: bool,
     ) -> ResultType<(RendezvousMessage, Option<SocketAddr>)> {
         let mut ph = ph;
-        if hbb_common::config::is_cliente_outbound_blocked(&ph.licence_key) {
+        if hbb_common::config::is_legacy_outbound_blocked(&ph.licence_key) {
             log::warn!(
-                "Outbound connection blocked for cliente key from {} for peer {}",
+                "Outbound connection blocked for legacy key from {} for peer {}",
                 addr,
                 ph.id
             );
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
-                other_failure: "Outbound connections not allowed for cliente edition".into(),
+                other_failure: "Outbound connections not allowed for legacy key".into(),
                 ..Default::default()
             });
             return Ok((msg_out, None));

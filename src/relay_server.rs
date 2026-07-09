@@ -427,9 +427,9 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
     if let Ok(Some(Ok(bytes))) = timeout(30_000, stream.recv()).await {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes) {
             if let Some(rendezvous_message::Union::RequestRelay(rf)) = msg_in.union {
-                if hbb_common::config::is_cliente_outbound_relay(&rf.licence_key, &rf.id) {
+                if hbb_common::config::is_legacy_outbound_relay(&rf.licence_key, &rf.id) {
                     log::warn!(
-                        "Relay authentication blocked for cliente outbound from {}",
+                        "Relay authentication blocked for legacy outbound from {}",
                         addr
                     );
                     return;
