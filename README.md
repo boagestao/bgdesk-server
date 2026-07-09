@@ -38,13 +38,13 @@ Run this command on your Linux server to download the latest release for your pl
 curl -fsSL https://raw.githubusercontent.com/boagestao/bgdesk-server/refs/heads/main/install.sh | bash
 ```
 
-This creates a `~/bgdesk/` directory with `docker-compose.yml`, a `data/` volume, and a local `bgdesk/bgdesk-server:latest` image.
+This creates a `~/bgdesk/` directory with `docker-compose.yml`, a `data/` volume, and a local `boagestao/bgdesk-server:latest` image.
 
 Optional environment variables:
 
 - `BGDESK_INSTALL_DIR` — installation directory (default: `~/bgdesk`)
-- `BGDESK_RELAY_HOST` — public IP or domain used in `hbbs -r` (default: auto-detected)
-- `BGDESK_REPO` — GitHub repository for releases (default: `bgdesk/bgdesk-server`)
+- `BGDESK_REPO` — GitHub repository for releases (default: `boagestao/bgdesk-server`)
+- `BGDESK_TAG` — install a specific release tag (default: latest published release)
 
 Start the server after installation:
 

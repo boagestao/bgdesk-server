@@ -4,7 +4,6 @@ set -euo pipefail
 REPO="${BGDESK_REPO:-boagestao/bgdesk-server}"
 INSTALL_DIR="${BGDESK_INSTALL_DIR:-${HOME}/bgdesk}"
 IMAGE_NAME="${BGDESK_IMAGE:-boagestao/bgdesk-server:latest}"
-RELAY_HOST="${BGDESK_RELAY_HOST:-}"
 
 info() {
   printf '==> %s\n' "$*"
@@ -49,39 +48,63 @@ check_dependencies() {
   fi
 }
 
-get_latest_release_tag() {
-  local response tag
-  response="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" || \
-    error "failed to fetch latest release from ${REPO}"
+parse_json_field() {
+  local json="$1"
+  local field="$2"
+  printf '%s' "$json" | tr ',' '\n' | sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n1
+}
 
-  tag="$(printf '%s' "$response" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-  [ -n "$tag" ] || error "no published releases found for ${REPO}"
-  printf '%s' "$tag"
+get_latest_git_tag() {
+  local response
+  response="$(curl -fsSL "https://api.github.com/repos/${REPO}/tags?per_page=1" 2>/dev/null)" || return 1
+  parse_json_field "$response" "name"
+}
+
+resolve_release_tag() {
+  local response tag latest_git_tag
+
+  if [ -n "${BGDESK_TAG:-}" ]; then
+    printf '%s' "$BGDESK_TAG"
+    return
+  fi
+
+  if response="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null)"; then
+    tag="$(parse_json_field "$response" "tag_name")"
+    if [ -n "$tag" ]; then
+      printf '%s' "$tag"
+      return
+    fi
+  fi
+
+  if response="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=5" 2>/dev/null)"; then
+    tag="$(parse_json_field "$response" "tag_name")"
+    if [ -n "$tag" ]; then
+      printf '%s' "$tag"
+      return
+    fi
+  fi
+
+  latest_git_tag="$(get_latest_git_tag || true)"
+  if [ -n "$latest_git_tag" ] && \
+    response="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/tags/${latest_git_tag}" 2>/dev/null)"; then
+    tag="$(parse_json_field "$response" "tag_name")"
+    if [ -n "$tag" ]; then
+      printf '%s' "$tag"
+      return
+    fi
+  fi
+
+  if [ -n "$latest_git_tag" ]; then
+    error "no published releases for ${REPO} yet. Tag ${latest_git_tag} exists but assets are still being built. Wait for GitHub Actions to finish, then retry: https://github.com/${REPO}/actions"
+  fi
+
+  error "no published releases found for ${REPO}. Check https://github.com/${REPO}/releases"
 }
 
 get_release_asset_url() {
   local tag="$1"
   local arch="$2"
-  local response url
-
-  response="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/tags/${tag}")" || \
-    error "failed to fetch release metadata for tag ${tag}"
-
-  url="$(printf '%s' "$response" | sed -n "s/.*\"browser_download_url\":[[:space:]]*\"\\([^\"]*bgdesk-server-linux-${arch}\\.zip\\)\".*/\\1/p" | head -n1)"
-  [ -n "$url" ] || error "release ${tag} does not contain bgdesk-server-linux-${arch}.zip"
-  printf '%s' "$url"
-}
-
-detect_relay_host() {
-  if [ -n "$RELAY_HOST" ]; then
-    printf '%s' "$RELAY_HOST"
-    return
-  fi
-
-  curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null || \
-    curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null || \
-    hostname -I 2>/dev/null | awk '{print $1}' || \
-    printf 'bgdesk.example.com'
+  printf 'https://github.com/%s/releases/download/%s/bgdesk-server-linux-%s.zip' "$REPO" "$tag" "$arch"
 }
 
 extract_zip() {
@@ -129,57 +152,39 @@ EOF
 
 write_compose_file() {
   local dir="$1"
-  local relay_host="$2"
 
   cat >"${dir}/docker-compose.yml" <<EOF
-version: '3'
-
-networks:
-  bgdesk-net:
-    external: false
-
 services:
   hbbs:
     container_name: hbbs
-    ports:
-      - 21115:21115
-      - 21116:21116
-      - 21116:21116/udp
-      - 21118:21118
     image: ${IMAGE_NAME}
-    command: hbbs -r ${relay_host}:21117
+    command: hbbs
     volumes:
       - ./data:/root
-    networks:
-      - bgdesk-net
+    network_mode: "host"
     depends_on:
       - hbbr
     restart: unless-stopped
 
   hbbr:
     container_name: hbbr
-    ports:
-      - 21117:21117
-      - 21119:21119
     image: ${IMAGE_NAME}
     command: hbbr
     volumes:
       - ./data:/root
-    networks:
-      - bgdesk-net
+    network_mode: "host"
     restart: unless-stopped
 EOF
 }
 
 main() {
-  local arch tag asset_url relay_host tmp_dir build_dir zip_file
+  local arch tag asset_url tmp_dir build_dir zip_file
 
   check_dependencies
 
   arch="$(detect_arch)"
-  tag="$(get_latest_release_tag)"
+  tag="$(resolve_release_tag)"
   asset_url="$(get_release_asset_url "$tag" "$arch")"
-  relay_host="$(detect_relay_host)"
 
   info "installing BGDesk Server ${tag} (${arch}) into ${INSTALL_DIR}"
 
@@ -192,7 +197,9 @@ main() {
 
   zip_file="${tmp_dir}/bgdesk-server-linux-${arch}.zip"
   info "downloading ${asset_url}"
-  curl -fsSL "$asset_url" -o "$zip_file"
+  if ! curl -fsSL "$asset_url" -o "$zip_file"; then
+    error "failed to download ${asset_url}. Release ${tag} may not include linux-${arch} assets yet."
+  fi
 
   info "extracting release archive"
   extract_zip "$zip_file" "${tmp_dir}/extracted"
@@ -206,24 +213,18 @@ main() {
   info "building docker image ${IMAGE_NAME}"
   docker build -t "$IMAGE_NAME" "$build_dir"
 
-  write_compose_file "$INSTALL_DIR" "$relay_host"
+  write_compose_file "$INSTALL_DIR"
 
   info "installation complete"
   printf '\n'
   printf 'Directory: %s\n' "$INSTALL_DIR"
   printf 'Version:   %s\n' "$tag"
-  printf 'Relay:     %s:21117\n' "$relay_host"
   printf '\n'
   printf 'Start the server with:\n'
   printf '  cd %s\n' "$INSTALL_DIR"
   printf '  %s up -d\n' "${COMPOSE_CMD[*]}"
   printf '\n'
   printf 'After the first start, check ./data/id_ed25519.pub for your public key.\n'
-  if [ "$relay_host" = "bgdesk.example.com" ]; then
-    printf '\n'
-    printf 'Warning: relay host could not be detected automatically.\n'
-    printf 'Edit docker-compose.yml and replace bgdesk.example.com with your public IP or domain.\n'
-  fi
 }
 
 main "$@"
