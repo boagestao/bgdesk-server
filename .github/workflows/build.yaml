@@ -6,6 +6,7 @@ name: build
 # DOCKER_IMAGE_CLASSIC should be the target image name on docker hub for the old build (e.g. "bgdesk/bgdesk-server" )
 # DOCKER_HUB_USERNAME is the username you normally use to login at https://hub.docker.com/
 # DOCKER_HUB_PASSWORD is a token you should create under "account settings / security" with read/write access
+# SUBMODULES_TOKEN is a GitHub PAT with read access to the private bgdesk-config repository
 
 permissions:
   contents: read
@@ -47,9 +48,10 @@ jobs:
     steps:
       
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.SUBMODULES_TOKEN }}
 
       - name: Install toolchain
         uses: actions-rs/toolchain@v1
@@ -140,9 +142,10 @@ jobs:
     steps:
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.SUBMODULES_TOKEN }}
         
       - name: Download binaries
         uses: actions/download-artifact@v4
@@ -308,9 +311,10 @@ jobs:
     steps:
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.SUBMODULES_TOKEN }}
         
       - name: Download binaries
         uses: actions/download-artifact@v4
@@ -473,9 +477,10 @@ jobs:
     steps:
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.SUBMODULES_TOKEN }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
