@@ -18,8 +18,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # sqlx compile-time query checking (see ci/sqlx-compile.sqlite3)
-  DATABASE_URL: sqlite://ci/sqlx-compile.sqlite3
+  # sqlx compile-time macros use committed sqlx-data.json (no DB at build time)
+  SQLX_OFFLINE: true
   
 jobs:
 
@@ -54,9 +54,6 @@ jobs:
           components: rustfmt
           profile: minimal
           target: ${{ matrix.job.target }}
-
-      - name: Configure SQLx database URL
-        run: echo "DATABASE_URL=sqlite:///${{ github.workspace }}/ci/sqlx-compile.sqlite3" >> $GITHUB_ENV
 
       - name: Build
         uses: actions-rs/cargo@v1

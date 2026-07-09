@@ -1,0 +1,87 @@
+{
+  "db": "SQLite",
+  "066c785019c89ef94cd6390be832c0d1223cf8a4b3bb3238b9d8a3aa57df1a8f": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 5
+      }
+    },
+    "query": "insert into peer(guid, id, uuid, pk, info) values(?, ?, ?, ?, ?)"
+  },
+  "6b8948bef8d0224cf87ebb250e70a0c3de97c997ced1c571826c3bea05678e05": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "\n            create table if not exists peer (\n                guid blob primary key not null,\n                id varchar(100) not null,\n                uuid blob not null,\n                pk blob not null,\n                created_at datetime not null default(current_timestamp),\n                user blob,\n                status tinyint,\n                note varchar(300),\n                info text not null\n            ) without rowid;\n            create unique index if not exists index_peer_id on peer (id);\n            create index if not exists index_peer_user on peer (user);\n            create index if not exists index_peer_created_at on peer (created_at);\n            create index if not exists index_peer_status on peer (status);\n        "
+  },
+  "ecf94760cb1b29f8b72e840ef1be1c0d4fc6c00a0aa3fdef4704cb00c76a2877": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 4
+      }
+    },
+    "query": "update peer set id=?, pk=?, info=? where guid=?"
+  },
+  "ee49c9f9b7195ecbd4ae35430b804d4db71a6232977674854b7cf18d7dc4565a": {
+    "describe": {
+      "columns": [
+        {
+          "name": "guid",
+          "ordinal": 0,
+          "type_info": "Blob"
+        },
+        {
+          "name": "id",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "uuid",
+          "ordinal": 2,
+          "type_info": "Blob"
+        },
+        {
+          "name": "pk",
+          "ordinal": 3,
+          "type_info": "Blob"
+        },
+        {
+          "name": "user",
+          "ordinal": 4,
+          "type_info": "Blob"
+        },
+        {
+          "name": "status",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "info",
+          "ordinal": 6,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "select guid, id, uuid, pk, user, status, info from peer where id = ?"
+  }
+}

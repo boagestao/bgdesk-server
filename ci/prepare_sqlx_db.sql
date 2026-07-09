@@ -1,5 +1,7 @@
 -- Schema used by sqlx compile-time query checking.
--- The resulting database is committed as sqlx-compile.sqlite3 for CI builds.
+-- The resulting database is committed as sqlx-compile.sqlite3 for local `cargo sqlx prepare`.
+-- After changing queries in src/database.rs, regenerate offline metadata with:
+--   DATABASE_URL="sqlite://$(pwd)/ci/sqlx-compile.sqlite3" cargo sqlx prepare --merged -- --lib
 create table if not exists peer (
     guid blob primary key not null,
     id varchar(100) not null,
