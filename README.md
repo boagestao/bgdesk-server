@@ -35,7 +35,7 @@ If you want to develop your own server, [bgdesk-server-demo](https://github.com/
 Run this command on your Linux server to download the latest release for your platform, build the Docker image, and prepare everything for `docker compose up`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bgdesk/bgdesk-server/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/boagestao/bgdesk-server/refs/heads/main/install.sh | bash
 ```
 
 This creates a `~/bgdesk/` directory with `docker-compose.yml`, a `data/` volume, and a local `bgdesk/bgdesk-server:latest` image.

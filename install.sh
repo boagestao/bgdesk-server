@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${BGDESK_REPO:-bgdesk/bgdesk-server}"
+REPO="${BGDESK_REPO:-boagestao/bgdesk-server}"
 INSTALL_DIR="${BGDESK_INSTALL_DIR:-${HOME}/bgdesk}"
-IMAGE_NAME="${BGDESK_IMAGE:-bgdesk/bgdesk-server:latest}"
+IMAGE_NAME="${BGDESK_IMAGE:-boagestao/bgdesk-server:latest}"
 RELAY_HOST="${BGDESK_RELAY_HOST:-}"
 
 info() {
