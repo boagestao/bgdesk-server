@@ -1,0 +1,65 @@
+#!/bin/sh
+
+# PROVIDE: bgdesk_hbbr
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf.local or /etc/rc.conf
+# to enable this service:
+#
+# bgdesk_hbbr_enable (bool):            Set to NO by default.
+#               Set it to YES to enable bgdesk_hbbr.
+# bgdesk_hbbr_args (string):            Set extra arguments to pass to bgdesk_hbbr
+#               Default is "-k _".
+# bgdesk_hbbr_user (string):            Set user that bgdesk_hbbr will run under
+#               Default is "root".
+# bgdesk_hbbr_group (string):           Set group that bgdesk_hbbr will run under
+#               Default is "wheel".
+
+. /etc/rc.subr
+
+name=bgdesk_hbbr
+desc="BGDesk Relay Server"
+rcvar=bgdesk_hbbr_enable
+
+load_rc_config $name
+
+: ${bgdesk_hbbr_enable:=NO}
+: ${bgdesk_hbbr_args="-k _"}
+: ${bgdesk_hbbr_user:=bgdesk}
+: ${bgdesk_hbbr_group:=bgdesk}
+
+pidfile=/var/run/bgdesk_hbbr.pid
+command=/usr/sbin/daemon
+procname=/usr/local/sbin/hbbr
+bgdesk_hbbr_chdir=/var/db/bgdesk-server
+command_args="-p ${pidfile} -o /var/log/bgdesk-hbbr.log ${procname} ${bgdesk_hbbr_args}"
+## If you want the daemon do its log over syslog comment out the above line and remove the comment from the below replacement
+#command_args="-p ${pidfile} -T ${name} ${procname} ${bgdesk_hbbr_args}"
+
+start_precmd=bgdesk_hbbr_startprecmd
+
+bgdesk_hbbr_startprecmd()
+{
+    if [ -e ${pidfile} ]; then
+        chown ${bgdesk_hbbr_user}:${bgdesk_hbbr_group} ${pidfile};
+    else
+        install -o ${bgdesk_hbbr_user} -g ${bgdesk_hbbr_group} /dev/null ${pidfile};
+    fi
+    if [ -e ${bgdesk_hbbr_chdir} ]; then
+        chown -R ${bgdesk_hbbr_user}:${bgdesk_hbbr_group} ${bgdesk_hbbr_chdir};
+        chmod -R 770 ${bgdesk_hbbr_chdir};
+    else
+        mkdir -m 770 ${bgdesk_hbbr_chdir};
+        chown ${bgdesk_hbbr_user}:${bgdesk_hbbr_group} ${bgdesk_hbbr_chdir};
+    fi
+    if [ -e /var/log/bgdesk-hbbr.log ]; then
+        chown -R ${bgdesk_hbbr_user}:${bgdesk_hbbr_group} /var/log/bgdesk-hbbr.log;
+        chmod 660 /var/log/bgdesk-hbbr.log;
+    else
+        install -o ${bgdesk_hbbr_user} -g ${bgdesk_hbbr_group} /dev/null /var/log/bgdesk-hbbr.log;
+        chmod 660 /var/log/bgdesk-hbbr.log;
+    fi
+}
+
+run_rc_command "$1"

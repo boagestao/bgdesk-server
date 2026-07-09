@@ -1,0 +1,2 @@
+bin/hbbr usr/bin
+systemd/bgdesk-hbbr.service lib/systemd/system

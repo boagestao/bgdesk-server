@@ -1,0 +1,68 @@
+#!/bin/sh
+
+# PROVIDE: bgdesk_hbbs
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf.local or /etc/rc.conf
+# to enable this service:
+#
+# bgdesk_hbbs_enable (bool):            Set to NO by default.
+#               Set it to YES to enable bgdesk_hbbs.
+# bgdesk_hbbs_ip (string):              Set IP address/hostname of relay server to use
+#               Defaults to "127.0.0.1", please replace with your server hostname/IP.
+# bgdesk_hbbs_args (string):            Set extra arguments to pass to bgdesk_hbbs
+#               Default is "-r ${bgdesk_hbbs_ip} -k _".
+# bgdesk_hbbs_user (string):            Set user that bgdesk_hbbs will run under
+#               Default is "root".
+# bgdesk_hbbs_group (string):           Set group that bgdesk_hbbs will run under
+#               Default is "wheel".
+
+. /etc/rc.subr
+
+name=bgdesk_hbbs
+desc="BGDesk ID/Rendezvous Server"
+rcvar=bgdesk_hbbs_enable
+
+load_rc_config $name
+
+: ${bgdesk_hbbs_enable:=NO}
+: ${bgdesk_hbbs_ip:=127.0.0.1}
+: ${bgdesk_hbbs_args="-r ${bgdesk_hbbs_ip} -k _"}
+: ${bgdesk_hbbs_user:=bgdesk}
+: ${bgdesk_hbbs_group:=bgdesk}
+
+pidfile=/var/run/bgdesk_hbbs.pid
+command=/usr/sbin/daemon
+procname=/usr/local/sbin/hbbs
+bgdesk_hbbs_chdir=/var/db/bgdesk-server
+command_args="-p ${pidfile} -o /var/log/bgdesk-hbbs.log ${procname} ${bgdesk_hbbs_args}"
+## If you want the daemon to do its log over syslog, comment out the above line and remove the comment from the below replacement
+#command_args="-p ${pidfile} -T ${name} ${procname} ${bgdesk_hbbs_args}"
+
+start_precmd=bgdesk_hbbs_startprecmd
+
+bgdesk_hbbs_startprecmd()
+{
+    if [ -e ${pidfile} ]; then
+        chown ${bgdesk_hbbs_user}:${bgdesk_hbbs_group} ${pidfile};
+    else
+        install -o ${bgdesk_hbbs_user} -g ${bgdesk_hbbs_group} /dev/null ${pidfile};
+    fi
+    if [ -e ${bgdesk_hbbs_chdir} ]; then
+        chown -R ${bgdesk_hbbs_user}:${bgdesk_hbbs_group} ${bgdesk_hbbs_chdir};
+        chmod -R 770 ${bgdesk_hbbs_chdir};
+    else
+        mkdir -m 770 ${bgdesk_hbbs_chdir};
+        chown ${bgdesk_hbbs_user}:${bgdesk_hbbs_group} ${bgdesk_hbbs_chdir};
+    fi
+    if [ -e /var/log/bgdesk-hbbs.log ]; then
+        chown -R ${bgdesk_hbbs_user}:${bgdesk_hbbs_group} /var/log/bgdesk-hbbs.log;
+        chmod 660 /var/log/bgdesk-hbbs.log;
+    else
+        install -o ${bgdesk_hbbs_user} -g ${bgdesk_hbbs_group} /dev/null /var/log/bgdesk-hbbs.log;
+        chmod 660 /var/log/bgdesk-hbbs.log;
+    fi
+}
+
+run_rc_command "$1"
