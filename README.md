@@ -32,4 +32,25 @@ If you want to develop your own server, [bgdesk-server-demo](https://github.com/
 
 ## Installation
 
-Please follow this [doc](https://bgdesk.com/docs/en/self-host/bgdesk-server-oss/)
+Run this command on your Linux server to download the latest release for your platform, build the Docker image, and prepare everything for `docker compose up`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bgdesk/bgdesk-server/main/install.sh | bash
+```
+
+This creates a `~/bgdesk/` directory with `docker-compose.yml`, a `data/` volume, and a local `bgdesk/bgdesk-server:latest` image.
+
+Optional environment variables:
+
+- `BGDESK_INSTALL_DIR` — installation directory (default: `~/bgdesk`)
+- `BGDESK_RELAY_HOST` — public IP or domain used in `hbbs -r` (default: auto-detected)
+- `BGDESK_REPO` — GitHub repository for releases (default: `bgdesk/bgdesk-server`)
+
+Start the server after installation:
+
+```bash
+cd ~/bgdesk
+docker compose up -d
+```
+
+For more details, please follow this [doc](https://bgdesk.com/docs/en/self-host/bgdesk-server-oss/)
