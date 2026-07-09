@@ -107,6 +107,47 @@ pub fn is_cliente_licence_key(key: &str) -> bool {
     !key.is_empty() && key == RS_PUB_KEY_CLIENTE
 }
 
+/// Cliente edition is incoming-only and must not initiate outbound connections.
+#[inline]
+pub fn is_cliente_outbound_blocked(licence_key: &str) -> bool {
+    is_cliente_licence_key(licence_key)
+}
+
+/// Outbound relay targets a remote peer (`target_peer_id` set). Inbound relay joins an
+/// existing session (empty `target_peer_id`) and remains allowed for cliente hosts.
+#[inline]
+pub fn is_cliente_outbound_relay(licence_key: &str, target_peer_id: &str) -> bool {
+    is_cliente_licence_key(licence_key) && !target_peer_id.is_empty()
+}
+
+#[inline]
+pub fn is_valid_licence_key(licence_key: &str, server_key: &str) -> bool {
+    if licence_key.is_empty() {
+        return false;
+    }
+    licence_key == RS_PUB_KEY_CLIENTE
+        || licence_key == RS_PUB_KEY_SUPORTE
+        || (!server_key.is_empty() && licence_key == server_key)
+}
+
+/// Rejects only when a licence key was provided and it is not valid.
+#[inline]
+pub fn is_licence_key_rejected(licence_key: &str, server_key: &str) -> bool {
+    if server_key.is_empty() || licence_key.is_empty() {
+        return false;
+    }
+    !is_valid_licence_key(licence_key, server_key)
+}
+
+/// PunchHoleRequest always carries a licence key when server authentication is enabled.
+#[inline]
+pub fn is_punch_hole_licence_key_rejected(licence_key: &str, server_key: &str) -> bool {
+    if server_key.is_empty() {
+        return false;
+    }
+    licence_key.is_empty() || !is_valid_licence_key(licence_key, server_key)
+}
+
 pub const RENDEZVOUS_PORT: i32 = 21116;
 pub const RELAY_PORT: i32 = 21117;
 

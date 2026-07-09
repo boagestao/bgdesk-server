@@ -495,15 +495,15 @@ impl RendezvousServer {
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
-                    if hbb_common::config::is_cliente_licence_key(&rf.licence_key) {
+                    if hbb_common::config::is_cliente_outbound_relay(&rf.licence_key, &rf.id) {
                         log::warn!(
-                            "Relay request blocked for cliente key from {} for peer {}",
+                            "Relay request blocked for cliente outbound from {} for peer {}",
                             addr,
                             rf.id
                         );
                         return true;
                     }
-                    if !key.is_empty() && rf.licence_key != key {
+                    if hbb_common::config::is_licence_key_rejected(&rf.licence_key, key) {
                         log::warn!(
                             "Relay authentication failed from {} for peer {} - invalid key",
                             addr,
@@ -695,7 +695,7 @@ impl RendezvousServer {
         ws: bool,
     ) -> ResultType<(RendezvousMessage, Option<SocketAddr>)> {
         let mut ph = ph;
-        if hbb_common::config::is_cliente_licence_key(&ph.licence_key) {
+        if hbb_common::config::is_cliente_outbound_blocked(&ph.licence_key) {
             log::warn!(
                 "Outbound connection blocked for cliente key from {} for peer {}",
                 addr,
@@ -708,7 +708,7 @@ impl RendezvousServer {
             });
             return Ok((msg_out, None));
         }
-        if !key.is_empty() && ph.licence_key != key {
+        if hbb_common::config::is_punch_hole_licence_key_rejected(&ph.licence_key, key) {
             log::warn!("Authentication failed from {} for peer {} - invalid key", addr, ph.id);
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
