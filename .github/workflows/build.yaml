@@ -82,6 +82,8 @@ jobs:
     needs: 
       - build
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -109,60 +111,8 @@ jobs:
           zip ${{ matrix.job.name }}/bgdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip ${{ matrix.job.name }}/*
 
       - name: Create Release (${{ matrix.job.os }} - (${{ matrix.job.name }})
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           draft: true
           files: ${{ matrix.job.name }}/bgdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip
 
-  deb-package:
-
-    name: debian package - ${{ matrix.job.name }}
-    needs: build
-    runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        job:
-          - { name: "amd64",   debian_platform: "amd64",   crossbuild_package: "" }
-          - { name: "arm64v8", debian_platform: "arm64",   crossbuild_package: "crossbuild-essential-arm64" }
-          - { name: "armv7",   debian_platform: "armhf",   crossbuild_package: "crossbuild-essential-armhf" }
-
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.SUBMODULES_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Create packaging env
-        run: |
-          sudo apt update
-          DEBIAN_FRONTEND=noninteractive sudo apt install -y devscripts build-essential debhelper pkg-config ${{ matrix.job.crossbuild_package }}
-          mkdir -p debian-build/${{ matrix.job.name }}/bin
-
-      - name: Download binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: binaries-linux-${{ matrix.job.name }}
-          path: debian-build/${{ matrix.job.name }}/bin
-
-      - name: Build package for ${{ matrix.job.name }} arch
-        run: |
-          chmod -v a+x debian-build/${{ matrix.job.name }}/bin/*
-          cp -vr debian systemd debian-build/${{ matrix.job.name }}/
-          cat debian/control.tpl | sed 's/{{ ARCH }}/${{ matrix.job.debian_platform }}/' > debian-build/${{ matrix.job.name }}/debian/control
-          cd debian-build/${{ matrix.job.name }}/
-          debuild -i -us -uc -b -a${{ matrix.job.debian_platform }}
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: true
-          files: |
-            debian-build/bgdesk-server-hbbr_*_${{ matrix.job.debian_platform }}.deb
-            debian-build/bgdesk-server-hbbs_*_${{ matrix.job.debian_platform }}.deb
-            debian-build/bgdesk-server-utils_*_${{ matrix.job.debian_platform }}.deb
