@@ -8,8 +8,11 @@ use std::{
     io::prelude::*,
     io::Read,
     net::SocketAddr,
+    path::Path,
     time::{Instant, SystemTime},
 };
+
+pub const KEYPAIR_PATHS: &[&str] = &["config/id_ed25519", "id_ed25519"];
 
 #[allow(dead_code)]
 pub(crate) fn get_expired_time() -> Instant {
@@ -104,50 +107,73 @@ pub fn now() -> u64 {
         .unwrap_or_default()
 }
 
-pub fn gen_sk(wait: u64) -> (String, Option<sign::SecretKey>) {
-    let sk_file = "id_ed25519";
-    if wait > 0 && !std::path::Path::new(sk_file).exists() {
-        std::thread::sleep(std::time::Duration::from_millis(wait));
+pub fn load_keypair_from_file(sk_file: &str) -> Option<(String, sign::SecretKey)> {
+    let mut file = std::fs::File::open(sk_file).ok()?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).ok()?;
+    let contents = contents.trim();
+    let sk = base64::decode(contents).ok()?;
+    if sk.len() != sign::SECRETKEYBYTES {
+        return None;
     }
-    if let Ok(mut file) = std::fs::File::open(sk_file) {
-        let mut contents = String::new();
-        if file.read_to_string(&mut contents).is_ok() {
-            let contents = contents.trim();
-            let sk = base64::decode(contents).unwrap_or_default();
-            if sk.len() == sign::SECRETKEYBYTES {
-                let mut tmp = [0u8; sign::SECRETKEYBYTES];
-                tmp[..].copy_from_slice(&sk);
-                let pk = base64::encode(&tmp[sign::SECRETKEYBYTES / 2..]);
-                log::info!("Private key comes from {}", sk_file);
-                return (pk, Some(sign::SecretKey(tmp)));
-            } else {
-                // don't use log here, since it is async
-                println!("Fatal error: malformed private key in {sk_file}.");
-                std::process::exit(1);
-            }
+    let mut tmp = [0u8; sign::SECRETKEYBYTES];
+    tmp.copy_from_slice(&sk);
+    let pk = base64::encode(&tmp[sign::SECRETKEYBYTES / 2..]);
+    Some((pk, sign::SecretKey(tmp)))
+}
+
+pub fn load_keypair() -> Option<(String, sign::SecretKey)> {
+    KEYPAIR_PATHS
+        .iter()
+        .find_map(|path| load_keypair_from_file(path))
+}
+
+pub fn load_keypair_for_public_key(public_key: &str) -> Option<(String, sign::SecretKey)> {
+    KEYPAIR_PATHS.iter().find_map(|path| {
+        let (pk, sk) = load_keypair_from_file(path)?;
+        if public_key.is_empty() || pk == public_key {
+            Some((pk, sk))
+        } else {
+            None
         }
-    } else {
-        let gen_func = || {
-            let (tmp, sk) = sign::gen_keypair();
-            (base64::encode(tmp), sk)
-        };
-        let (mut pk, mut sk) = gen_func();
-        for _ in 0..300 {
-            if !pk.contains('/') && !pk.contains(':') {
-                break;
-            }
-            (pk, sk) = gen_func();
+    })
+}
+
+pub fn gen_sk(wait: u64) -> (String, Option<sign::SecretKey>) {
+    if let Some(pair) = load_keypair() {
+        log::info!("Private key loaded from {}", KEYPAIR_PATHS[0]);
+        return (pair.0, Some(pair.1));
+    }
+
+    let sk_file = KEYPAIR_PATHS[0];
+    if wait > 0 && !Path::new(sk_file).exists() {
+        std::thread::sleep(std::time::Duration::from_millis(wait));
+        if let Some(pair) = load_keypair() {
+            log::info!("Private key loaded from {}", sk_file);
+            return (pair.0, Some(pair.1));
         }
-        let pub_file = format!("{sk_file}.pub");
-        if let Ok(mut f) = std::fs::File::create(&pub_file) {
-            f.write_all(pk.as_bytes()).ok();
-            if let Ok(mut f) = std::fs::File::create(sk_file) {
-                let s = base64::encode(&sk);
-                if f.write_all(s.as_bytes()).is_ok() {
-                    log::info!("Private/public key written to {}/{}", sk_file, pub_file);
-                    log::debug!("Public key: {}", pk);
-                    return (pk, Some(sk));
-                }
+    }
+
+    let gen_func = || {
+        let (tmp, sk) = sign::gen_keypair();
+        (base64::encode(tmp), sk)
+    };
+    let (mut pk, mut sk) = gen_func();
+    for _ in 0..300 {
+        if !pk.contains('/') && !pk.contains(':') {
+            break;
+        }
+        (pk, sk) = gen_func();
+    }
+    let pub_file = format!("{sk_file}.pub");
+    if let Ok(mut f) = std::fs::File::create(&pub_file) {
+        f.write_all(pk.as_bytes()).ok();
+        if let Ok(mut f) = std::fs::File::create(sk_file) {
+            let s = base64::encode(&sk);
+            if f.write_all(s.as_bytes()).is_ok() {
+                log::info!("Private/public key written to {}/{}", sk_file, pub_file);
+                log::debug!("Public key: {}", pk);
+                return (pk, Some(sk));
             }
         }
     }

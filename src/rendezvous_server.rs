@@ -1260,6 +1260,14 @@ impl RendezvousServer {
             }
         }
 
+        if out_sk.is_none() {
+            if let Some((pk, sk)) = crate::common::load_keypair_for_public_key(&key) {
+                log::info!("Private key loaded from config for public key {}", pk);
+                key = pk;
+                out_sk = Some(sk);
+            }
+        }
+
         if key.is_empty() || key == "-" || key == "_" {
             let (pk, sk) = crate::common::gen_sk(0);
             out_sk = sk;
@@ -1270,6 +1278,11 @@ impl RendezvousServer {
 
         if !key.is_empty() {
             log::info!("Key: {}", key);
+        }
+        if out_sk.is_none() && !key.is_empty() {
+            log::warn!(
+                "No private key found for public key; signed connections will be disabled"
+            );
         }
         (key, out_sk)
     }
