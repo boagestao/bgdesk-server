@@ -34,7 +34,7 @@ fn gen_bgdesk_config() {
 
     let settings: toml::Table = content.parse().expect("invalid config/settings.toml");
     let rs_pub_key_cliente = required_string(&settings, "rs_pub_key");
-    let rs_pub_key_suporte = required_string(&settings, "rs_pub_key_suporte");
+    let rs_pub_key_legacy = required_string(&settings, "rs_pub_key_legacy");
 
     let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("bgdesk_config.rs");
     let mut file = std::fs::File::create(&out_path).expect("create bgdesk_config.rs");
@@ -52,13 +52,13 @@ fn gen_bgdesk_config() {
     .unwrap();
     writeln!(
         file,
-        "pub const RS_PUB_KEY_SUPORTE: &str = \"{}\";",
-        escape(&rs_pub_key_suporte)
+        "pub const RS_PUB_KEY_LEGACY: &str = \"{}\";",
+        escape(&rs_pub_key_legacy)
     )
     .unwrap();
     writeln!(
         file,
-        "pub const RS_PUB_KEY: &str = RS_PUB_KEY_SUPORTE;"
+        "pub const RS_PUB_KEY: &str = RS_PUB_KEY_CLIENTE;"
     )
     .unwrap();
 }

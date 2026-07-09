@@ -2,7 +2,7 @@ use clap::App;
 mod common;
 mod relay_server;
 use flexi_logger::*;
-use hbb_common::{config::{RELAY_PORT, RS_PUB_KEY_SUPORTE}, ResultType};
+use hbb_common::{config::{RELAY_PORT, RS_PUB_KEY}, ResultType};
 use relay_server::*;
 mod version;
 
@@ -35,7 +35,7 @@ fn main() -> ResultType<()> {
             port = v + 1;
         }
     }
-    let default_key = std::env::var("KEY").unwrap_or_else(|_| RS_PUB_KEY_SUPORTE.to_owned());
+    let default_key = std::env::var("KEY").unwrap_or_else(|_| RS_PUB_KEY.to_owned());
     start(
         matches.value_of("port").unwrap_or(&port.to_string()),
         matches.value_of("key").unwrap_or(&default_key),

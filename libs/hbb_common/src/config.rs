@@ -107,26 +107,39 @@ pub fn is_cliente_licence_key(key: &str) -> bool {
     !key.is_empty() && key == RS_PUB_KEY_CLIENTE
 }
 
-/// Cliente edition is incoming-only and must not initiate outbound connections.
+#[inline]
+pub fn is_legacy_licence_key(key: &str) -> bool {
+    !key.is_empty() && key == RS_PUB_KEY_LEGACY
+}
+
+/// Licence keys that may only accept incoming connections.
+#[inline]
+pub fn is_incoming_only_licence_key(key: &str) -> bool {
+    is_cliente_licence_key(key) || is_legacy_licence_key(key)
+}
+
+/// Cliente and legacy keys must not initiate outbound connections.
 #[inline]
 pub fn is_cliente_outbound_blocked(licence_key: &str) -> bool {
-    is_cliente_licence_key(licence_key)
+    is_incoming_only_licence_key(licence_key)
 }
 
 /// Outbound relay targets a remote peer (`target_peer_id` set). Inbound relay joins an
-/// existing session (empty `target_peer_id`) and remains allowed for cliente hosts.
+/// existing session (empty `target_peer_id`) and remains allowed for incoming-only hosts.
 #[inline]
 pub fn is_cliente_outbound_relay(licence_key: &str, target_peer_id: &str) -> bool {
-    is_cliente_licence_key(licence_key) && !target_peer_id.is_empty()
+    is_incoming_only_licence_key(licence_key) && !target_peer_id.is_empty()
 }
 
+/// Primary key is `rs_pub_key` (`RS_PUB_KEY_CLIENTE`). `rs_pub_key_legacy` is accepted
+/// only as a legacy licence key for old incoming-only cliente builds.
 #[inline]
 pub fn is_valid_licence_key(licence_key: &str, server_key: &str) -> bool {
     if licence_key.is_empty() {
         return false;
     }
     licence_key == RS_PUB_KEY_CLIENTE
-        || licence_key == RS_PUB_KEY_SUPORTE
+        || licence_key == RS_PUB_KEY_LEGACY
         || (!server_key.is_empty() && licence_key == server_key)
 }
 

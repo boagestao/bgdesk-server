@@ -2,7 +2,7 @@
 // https://blog.csdn.net/bytxl/article/details/44344855
 
 use flexi_logger::*;
-use hbb_common::{bail, config::{RENDEZVOUS_PORT, RS_PUB_KEY_SUPORTE}, ResultType};
+use hbb_common::{bail, config::{RENDEZVOUS_PORT, RS_PUB_KEY}, ResultType};
 use hbbs::{common::*, *};
 
 const RMEM: usize = 0;
@@ -32,6 +32,6 @@ fn main() -> ResultType<()> {
     let rmem = get_arg("rmem").parse::<usize>().unwrap_or(RMEM);
     let serial: i32 = get_arg("serial").parse().unwrap_or(0);
     crate::common::check_software_update();
-    RendezvousServer::start(port, serial, &get_arg_or("key", RS_PUB_KEY_SUPORTE.to_owned()), rmem)?;
+    RendezvousServer::start(port, serial, &get_arg_or("key", RS_PUB_KEY.to_owned()), rmem)?;
     Ok(())
 }
