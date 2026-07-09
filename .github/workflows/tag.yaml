@@ -1,5 +1,8 @@
 name: tag
 
+on:
+  workflow_dispatch:
+
 permissions:
   contents: write
 
