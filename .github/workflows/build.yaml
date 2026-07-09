@@ -22,6 +22,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # sqlx compile-time query checking (see ci/sqlx-compile.sqlite3)
+  DATABASE_URL: sqlite://ci/sqlx-compile.sqlite3
   LATEST_TAG: latest
   GHCR_IMAGE: ghcr.io/bgdesk/bgdesk-server-s6
   GHCR_IMAGE_CLASSIC: ghcr.io/bgdesk/bgdesk-server
@@ -40,7 +42,6 @@ jobs:
           - { name: "amd64",   target: "x86_64-unknown-linux-musl" }
           - { name: "arm64v8", target: "aarch64-unknown-linux-musl" }
           - { name: "armv7",   target: "armv7-unknown-linux-musleabihf" }
-          - { name: "i386",    target: "i686-unknown-linux-musl" }
           #- { name: "amd64fb",    target: "x86_64-unknown-freebsd" }
 
     steps:
@@ -59,6 +60,9 @@ jobs:
           components: rustfmt
           profile: minimal
           target: ${{ matrix.job.target }}
+
+      - name: Configure SQLx database URL
+        run: echo "DATABASE_URL=sqlite:///${{ github.workspace }}/ci/sqlx-compile.sqlite3" >> $GITHUB_ENV
 
       - name: Build
         uses: actions-rs/cargo@v1
@@ -80,104 +84,12 @@ jobs:
             target/${{ matrix.job.target }}/release/bgdesk-utils
           if-no-files-found: error
 
-  build-win:
-    name: Build - windows
-    runs-on: windows-2022
-
-    steps:
-      
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: "1.90"
-          override: true
-          default: true
-          components: rustfmt
-          profile: minimal
-          target: x86_64-pc-windows-msvc
-
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --all-features --target=x86_64-pc-windows-msvc
-          use-cross: true
-
-      - name: Install NSIS
-        run: |
-          iwr -useb get.scoop.sh -outfile 'install.ps1'
-          .\install.ps1 -RunAsAdmin
-          scoop update
-          scoop bucket add extras
-          scoop install nsis
-
-      - name: Install Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
-
-      - name: Sign exe files
-        uses: GermanBluefox/code-sign-action@v7
-        if: false
-        with:
-          certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
-          password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
-          certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
-          folder: 'target\x86_64-pc-windows-msvc\release'
-          recursive: false
-
-      - name: Build UI browser file
-        run: |
-          npm i
-          npm run build
-        working-directory: ./ui/html
-
-      - name: Build UI setup file
-        run: |
-          rustup default nightly
-          cargo build --release
-          xcopy /y ..\target\x86_64-pc-windows-msvc\release\*.exe setup\bin\
-          xcopy /y target\release\*.exe setup\
-          mkdir setup\logs
-          makensis /V1 setup.nsi
-          mkdir SignOutput
-          mv BGDeskServer.Setup.exe SignOutput\
-          mv ..\target\x86_64-pc-windows-msvc\release\*.exe SignOutput\
-        working-directory: ./ui
-
-      - name: Sign UI setup file 
-        uses: GermanBluefox/code-sign-action@v7
-        if: false
-        with:
-          certificate: '${{ secrets.WINDOWS_PFX_BASE64 }}'
-          password: '${{ secrets.WINDOWS_PFX_PASSWORD }}'
-          certificatesha1: '${{ secrets.WINDOWS_PFX_SHA1_THUMBPRINT }}'
-          folder: './ui/SignOutput'
-          recursive: false
-
-      - name: Publish Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries-windows-x86_64
-          path: |
-            ui\SignOutput\hbbr.exe
-            ui\SignOutput\hbbs.exe
-            ui\SignOutput\bgdesk-utils.exe
-            ui\SignOutput\BGDeskServer.Setup.exe
-          if-no-files-found: error
-
-  # github (draft) release with all binaries
+  # github (draft) release with all binaries
   release:
 
     name: Github release
     needs: 
       - build
-      - build-win
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -186,9 +98,7 @@ jobs:
           - { os: "linux", name: "amd64", suffix: "" }
           - { os: "linux", name: "arm64v8", suffix: "" }
           - { os: "linux", name: "armv7", suffix: "" }
-          - { os: "linux", name: "i386", suffix: "" }
           #- { os: "linux", name: "amd64fb", suffix: "" }
-          - { os: "windows", name: "x86_64", suffix: "-unsigned" }
           
     steps:
 
@@ -226,7 +136,6 @@ jobs:
           - { name: "amd64",   docker_platform: "linux/amd64",  s6_platform: "x86_64" }
           - { name: "arm64v8", docker_platform: "linux/arm64",  s6_platform: "aarch64" }
           - { name: "armv7",   docker_platform: "linux/arm/v7", s6_platform: "armhf" }
-          - { name: "i386",    docker_platform: "linux/386",    s6_platform: "i686" }
 
     steps:
 
@@ -336,7 +245,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         with:
           base-image: ${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}
-          extra-images: ${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}-amd64,${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}-arm64v8,${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}-armv7,${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}-i386
+          extra-images: ${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}-amd64,${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}-arm64v8,${{ secrets.DOCKER_IMAGE }}:${{ env.GIT_TAG }}-armv7
           push: true
 
       # manifest for :1 tag (major release)
@@ -344,7 +253,7 @@ jobs:
         uses: Noelware/docker-manifest-action@0.4.3
         with:
           base-image: ${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}
-          extra-images: ${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}-amd64,${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}-arm64v8,${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}-armv7,${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}-i386
+          extra-images: ${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}-amd64,${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}-arm64v8,${{ secrets.DOCKER_IMAGE }}:${{ env.MAJOR_TAG }}-armv7
           push: true
 
       # manifest for :latest tag
@@ -352,7 +261,7 @@ jobs:
         uses: Noelware/docker-manifest-action@0.4.3
         with:
           base-image: ${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}
-          extra-images: ${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}-amd64,${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}-arm64v8,${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}-armv7,${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}-i386
+          extra-images: ${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}-amd64,${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}-arm64v8,${{ secrets.DOCKER_IMAGE }}:${{ env.LATEST_TAG }}-armv7
           push: true
 
       # GHCR manifests
@@ -362,7 +271,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         with:
           base-image: ${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}
-          extra-images: ${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-amd64,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-arm64v8,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-armv7,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-i386
+          extra-images: ${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-amd64,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-arm64v8,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-armv7
           push: true
 
       # manifest for :1 tag (major release)
@@ -370,7 +279,7 @@ jobs:
         uses: Noelware/docker-manifest-action@0.4.3
         with:
           base-image: ${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}
-          extra-images: ${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}-amd64,${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}-arm64v8,${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}-armv7,${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}-i386
+          extra-images: ${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}-amd64,${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}-arm64v8,${{ env.GHCR_IMAGE }}:${{ env.MAJOR_TAG }}-armv7
           push: true
 
       # manifest for :latest tag
@@ -378,7 +287,7 @@ jobs:
         uses: Noelware/docker-manifest-action@0.4.3
         with:
           base-image: ${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}
-          extra-images: ${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}-amd64,${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}-arm64v8,${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}-armv7,${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}-i386
+          extra-images: ${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}-amd64,${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}-arm64v8,${{ env.GHCR_IMAGE }}:${{ env.LATEST_TAG }}-armv7
           push: true
 
             
@@ -560,7 +469,6 @@ jobs:
           - { name: "amd64",   debian_platform: "amd64",   crossbuild_package: "" }
           - { name: "arm64v8", debian_platform: "arm64",   crossbuild_package: "crossbuild-essential-arm64" }
           - { name: "armv7",   debian_platform: "armhf",   crossbuild_package: "crossbuild-essential-armhf" }
-          - { name: "i386",    debian_platform: "i386",    crossbuild_package: "crossbuild-essential-i386" }
 
     steps:
 

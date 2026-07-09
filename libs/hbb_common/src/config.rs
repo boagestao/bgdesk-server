@@ -99,7 +99,13 @@ const CHARS: &[char] = &[
 ];
 
 pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.bgdesk.com"];
-pub const RS_PUB_KEY: &str = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";
+
+include!(concat!(env!("OUT_DIR"), "/bgdesk_config.rs"));
+
+#[inline]
+pub fn is_cliente_licence_key(key: &str) -> bool {
+    !key.is_empty() && key == RS_PUB_KEY_CLIENTE
+}
 
 pub const RENDEZVOUS_PORT: i32 = 21116;
 pub const RELAY_PORT: i32 = 21117;
