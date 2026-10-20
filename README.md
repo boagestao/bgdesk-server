@@ -49,27 +49,88 @@ If you want extra features, [BGDesk Server Pro](https://bgdesk.com/pricing.html)
 
 If you want to develop your own server, [bgdesk-server-demo](https://github.com/bgdesk/bgdesk-server-demo) might be a better and simpler start for you than this repo.
 
-## Installation
+## Instalação com um comando
 
-Run this command on your Linux server to download the latest release for your platform, build the Docker image, and prepare everything for `docker compose up`:
+Requisitos: servidor **Linux**, Bash, `curl`, Docker em execução, Docker Compose
+(plugin `docker compose` ou `docker-compose`) e `unzip` ou `python3`. O usuário
+precisa ter permissão para executar Docker. Arquiteturas suportadas: amd64,
+arm64 e armv7.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/boagestao/bgdesk-server/refs/heads/main/install.sh | bash
-```
-
-This creates a `~/bgdesk/` directory with `docker-compose.yml`, a `data/` volume, and a local `boagestao/bgdesk-server:latest` image.
-
-Optional environment variables:
-
-- `BGDESK_INSTALL_DIR` — installation directory (default: `~/bgdesk`)
-- `BGDESK_REPO` — GitHub repository for releases (default: `boagestao/bgdesk-server`)
-- `BGDESK_TAG` — install a specific release tag (default: latest published release)
-
-Start the server after installation:
+Execute no servidor:
 
 ```bash
-cd ~/bgdesk
-docker compose up -d
+bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/boagestao/bgdesk-server/refs/heads/main/install.sh | bash'
 ```
 
-For more details, please follow this [doc](https://bgdesk.com/docs/en/self-host/bgdesk-server-oss/)
+O comando baixa a versão publicada mais recente para a arquitetura do servidor,
+monta a imagem Docker local e **inicia automaticamente** os serviços `hbbs` e
+`hbbr`, configurados para reiniciar com o Docker. Não é necessário clonar o
+repositório nem compilar Rust.
+
+Os arquivos ficam em `~/bgdesk/`: configuração em `docker-compose.yml` e banco
+de dados e chaves em `data/`. A imagem padrão é
+`boagestao/bgdesk-server:latest`. Após a primeira inicialização, a chave pública
+para configurar os clientes estará em `~/bgdesk/data/id_ed25519.pub`.
+
+Libere no firewall do servidor as portas TCP `21115–21119` e UDP `21116` para
+acesso dos clientes. Os serviços usam a rede do host.
+
+## Atualização com um comando
+
+Execute no mesmo servidor, com o mesmo usuário da instalação:
+
+```bash
+bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/boagestao/bgdesk-server/refs/heads/main/install.sh | bash -s -- --update'
+```
+
+O comando baixa a versão mais recente, reconstrói a imagem local e recria os
+serviços automaticamente. O arquivo Compose existente, o banco e as chaves são
+preservados; as conexões podem ser interrompidas brevemente durante a reinicialização.
+A atualização exige uma instalação existente no diretório indicado. Se o
+download ou a montagem da imagem falhar, os serviços em execução continuam ativos.
+
+### Opções
+
+As mesmas variáveis opcionais funcionam na instalação e na atualização:
+
+- `BGDESK_INSTALL_DIR` — diretório da instalação (padrão: `~/bgdesk`). Use o mesmo diretório ao atualizar.
+- `BGDESK_REPO` — repositório das versões (padrão: `boagestao/bgdesk-server`).
+- `BGDESK_TAG` — tag de uma versão específica (padrão: versão publicada mais recente).
+- `BGDESK_IMAGE` — nome da imagem local na instalação. Ao atualizar, a imagem é obtida do Compose existente; os dois serviços devem usar a mesma imagem.
+
+Por exemplo, para instalar em `/opt/bgdesk`:
+
+```bash
+BGDESK_INSTALL_DIR=/opt/bgdesk bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/boagestao/bgdesk-server/refs/heads/main/install.sh | bash'
+```
+
+Para atualizar essa instalação:
+
+```bash
+BGDESK_INSTALL_DIR=/opt/bgdesk bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/boagestao/bgdesk-server/refs/heads/main/install.sh | bash -s -- --update'
+```
+
+Para consultar o estado e os logs de uma instalação no diretório padrão:
+
+```bash
+cd ~/bgdesk && docker compose ps
+cd ~/bgdesk && docker compose logs --tail=100 hbbs hbbr
+```
+
+Se estiver usando o Compose legado, substitua `docker compose` por `docker-compose`.
+Para mais detalhes, consulte a [documentação](https://bgdesk.com/docs/en/self-host/bgdesk-server-oss/).
+
+## Origem, copyright e licença
+
+O **BGDesk Server** é um projeto derivado (fork) do
+[RustDesk Server](https://github.com/rustdesk/rustdesk-server), parte do projeto
+[RustDesk](https://github.com/rustdesk/rustdesk).
+
+Copyright © 2022 open-trade, conforme o aviso em [debian/copyright](debian/copyright).
+Os créditos pelo código original pertencem aos seus autores e contribuidores do
+RustDesk. As modificações do BGDesk pertencem aos seus respectivos autores,
+preservando os avisos de copyright do projeto original.
+
+Este projeto é distribuído sob a **GNU Affero General Public License, versão 3
+ou posterior (AGPL-3.0-or-later)**. Consulte o arquivo [LICENSE](LICENSE) para o
+texto completo da licença.

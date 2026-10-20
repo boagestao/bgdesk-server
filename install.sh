@@ -14,6 +14,26 @@ error() {
   exit 1
 }
 
+usage() {
+  cat <<'EOF'
+Usage: bash install.sh [--update | --help]
+
+Install and start BGDesk Server, or update an existing installation.
+
+Environment variables:
+  BGDESK_INSTALL_DIR  Installation directory (default: ~/bgdesk)
+  BGDESK_REPO         Release repository (default: boagestao/bgdesk-server)
+  BGDESK_TAG          Release tag (default: latest published release)
+  BGDESK_IMAGE        Local image name (default: boagestao/bgdesk-server:latest;
+                      existing installations reuse the image in Compose)
+EOF
+}
+
+compose() (
+  cd "$INSTALL_DIR"
+  "${COMPOSE_CMD[@]}" -f docker-compose.yml "$@"
+)
+
 detect_arch() {
   local machine
   machine="$(uname -m)"
@@ -26,6 +46,8 @@ detect_arch() {
 }
 
 check_dependencies() {
+  [ "$(uname -s)" = "Linux" ] || error "this installer requires Linux (Docker host networking)"
+
   local missing=()
   for cmd in curl docker; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
@@ -35,12 +57,18 @@ check_dependencies() {
     error "missing required commands: ${missing[*]}"
   fi
 
+  if ! command -v unzip >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+    error "unzip or python3 is required to extract the release archive"
+  fi
+
   if ! docker info >/dev/null 2>&1; then
     error "docker daemon is not running or current user cannot access it"
   fi
 
+  COMPOSE_UP_ARGS=(up -d --force-recreate --no-build)
   if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD=(docker compose)
+    COMPOSE_UP_ARGS+=(--pull never)
   elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_CMD=(docker-compose)
   else
@@ -178,9 +206,33 @@ EOF
 }
 
 main() {
-  local arch tag asset_url tmp_dir build_dir zip_file
+  local arch tag asset_url tmp_dir build_dir zip_file existing_image
+  local mode="install"
+
+  [ "$#" -le 1 ] || error "expected at most one argument; use --help"
+  case "${1:-}" in
+    "") ;;
+    --update) mode="update" ;;
+    --help | -h) usage; return ;;
+    *) error "unknown argument: $1 (use --help)" ;;
+  esac
 
   check_dependencies
+
+  if [ "$mode" = "update" ] && [ ! -f "${INSTALL_DIR}/docker-compose.yml" ]; then
+    error "no installation found in ${INSTALL_DIR}; run without --update to install, or set BGDESK_INSTALL_DIR"
+  fi
+
+  if [ -f "${INSTALL_DIR}/docker-compose.yml" ]; then
+    compose config --quiet
+    existing_image="$(compose config --images | sort -u)"
+    [ -n "$existing_image" ] && [[ "$existing_image" != *$'\n'* ]] || \
+      error "expected hbbs and hbbr to use the same image in ${INSTALL_DIR}/docker-compose.yml"
+    if [ -n "${BGDESK_IMAGE:-}" ] && [ "$BGDESK_IMAGE" != "$existing_image" ]; then
+      error "BGDESK_IMAGE does not match the existing Compose image (${existing_image})"
+    fi
+    IMAGE_NAME="$existing_image"
+  fi
 
   arch="$(detect_arch)"
   tag="$(resolve_release_tag)"
@@ -193,7 +245,7 @@ main() {
   tmp_dir="$(mktemp -d)"
   build_dir="${tmp_dir}/docker-build"
   mkdir -p "$build_dir"
-  trap 'rm -rf "$tmp_dir"' EXIT
+  trap "rm -rf -- $(printf '%q' "$tmp_dir")" EXIT
 
   zip_file="${tmp_dir}/bgdesk-server-linux-${arch}.zip"
   info "downloading ${asset_url}"
@@ -213,18 +265,22 @@ main() {
   info "building docker image ${IMAGE_NAME}"
   docker build -t "$IMAGE_NAME" "$build_dir"
 
-  write_compose_file "$INSTALL_DIR"
+  if [ ! -f "${INSTALL_DIR}/docker-compose.yml" ]; then
+    write_compose_file "$INSTALL_DIR"
+  fi
 
-  info "installation complete"
+  info "starting BGDesk services"
+  compose "${COMPOSE_UP_ARGS[@]}" hbbs hbbr
+
+  info "${mode} complete"
   printf '\n'
   printf 'Directory: %s\n' "$INSTALL_DIR"
   printf 'Version:   %s\n' "$tag"
   printf '\n'
-  printf 'Start the server with:\n'
-  printf '  cd %s\n' "$INSTALL_DIR"
-  printf '  %s up -d\n' "${COMPOSE_CMD[*]}"
+  printf 'Service status:\n'
+  compose ps
   printf '\n'
-  printf 'After the first start, check ./data/id_ed25519.pub for your public key.\n'
+  printf 'Public key (generated on first start): %s/data/id_ed25519.pub\n' "$INSTALL_DIR"
 }
 
 main "$@"
