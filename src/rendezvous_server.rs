@@ -61,6 +61,9 @@ type RelayServers = Vec<String>;
 const CHECK_RELAY_TIMEOUT: u64 = 3_000;
 static ALWAYS_USE_RELAY: AtomicBool = AtomicBool::new(false);
 
+#[cfg(test)]
+mod tests;
+
 // Store punch hole requests
 use once_cell::sync::Lazy;
 use tokio::sync::Mutex as TokioMutex; // differentiate if needed
@@ -350,6 +353,8 @@ impl RendezvousServer {
                     } else if !self.check_ip_blocker(&ip, &id).await {
                         return send_rk_res(socket, addr, TOO_FREQUENT).await;
                     }
+                    let registration_lock = self.pm.registration_lock.clone();
+                    let _registration = registration_lock.lock().await;
                     let peer = self.pm.get_or(&id).await;
                     let (changed, ip_changed) = {
                         let peer = peer.read().await;
@@ -414,12 +419,14 @@ impl RendezvousServer {
                             );
                         }
                     }
-                    if changed {
-                        self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
-                    }
+                    let result = if changed {
+                        self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await
+                    } else {
+                        register_pk_response::Result::OK
+                    };
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {
-                        result: register_pk_response::Result::OK.into(),
+                        result: result.into(),
                         ..Default::default()
                     });
                     socket.send(&msg_out, addr).await?
@@ -561,8 +568,12 @@ impl RendezvousServer {
                     msg_out.set_test_nat_response(res);
                     Self::send_to_sink(sink, msg_out).await;
                 }
-                Some(rendezvous_message::Union::RegisterPk(_)) => {
-                    let res = register_pk_response::Result::NOT_SUPPORT;
+                Some(rendezvous_message::Union::RegisterPk(rk)) => {
+                    let res = if !self.check_ip_blocker(&addr.ip().to_string(), &rk.id).await {
+                        TOO_FREQUENT
+                    } else {
+                        self.pm.change_id(&rk.old_id, &rk.id, &rk.uuid).await
+                    };
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {
                         result: res.into(),

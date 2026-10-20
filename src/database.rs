@@ -47,6 +47,11 @@ pub struct Peer {
 }
 
 impl Database {
+    #[cfg(test)]
+    pub(crate) async fn test_connection(&self) -> deadpool::managed::Object<DbPool> {
+        self.pool.get().await.unwrap()
+    }
+
     pub async fn new(url: &str) -> ResultType<Database> {
         if !std::path::Path::new(url).exists() {
             std::fs::File::create(url).ok();
@@ -142,6 +147,55 @@ impl Database {
         .await?;
         Ok(())
     }
+
+    // A single conditional UPDATE preserves the device's GUID and metadata and
+    // lets the unique index arbitrate concurrent claims, including other processes.
+    pub async fn change_id(
+        &self,
+        guid: &[u8],
+        old_id: &str,
+        id: &str,
+        uuid: &[u8],
+    ) -> ResultType<hbb_common::rendezvous_proto::register_pk_response::Result> {
+        use hbb_common::rendezvous_proto::register_pk_response::Result::*;
+        let result = sqlx::query("update peer set id=? where guid=? and id=? and uuid=?")
+            .bind(id)
+            .bind(guid)
+            .bind(old_id)
+            .bind(uuid)
+            .execute(self.pool.get().await?.deref_mut())
+            .await;
+        match result {
+            Ok(result) if result.rows_affected() == 1 => Ok(OK),
+            Ok(_) => Ok(UUID_MISMATCH),
+            // SQLx 0.6 exposes SQLite's extended SQLITE_CONSTRAINT_UNIQUE code.
+            Err(SqlxError::Database(err)) if err.code().as_deref() == Some("2067") => Ok(ID_EXISTS),
+            Err(err) => Err(err.into()),
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    pub(crate) struct TestDatabase {
+        pub(crate) db: super::Database,
+        path: std::path::PathBuf,
+    }
+
+    impl TestDatabase {
+        pub(crate) async fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("bgdesk-{}.sqlite3", uuid::Uuid::new_v4()));
+            let db = super::Database::new(path.to_str().unwrap()).await.unwrap();
+            Self { db, path }
+        }
+    }
+
+    impl Drop for TestDatabase {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -154,7 +208,8 @@ mod tests {
 
     #[tokio::main(flavor = "multi_thread")]
     async fn insert() {
-        let db = super::Database::new("test.sqlite3").await.unwrap();
+        let fixture = super::test_support::TestDatabase::new().await;
+        let db = &fixture.db;
         let mut jobs = vec![];
         for i in 0..10000 {
             let cloned = db.clone();
@@ -176,6 +231,81 @@ mod tests {
             });
             jobs.push(a);
         }
-        hbb_common::futures::future::join_all(jobs).await;
+        for result in hbb_common::futures::future::join_all(jobs).await {
+            result.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn change_id_is_conditional_and_preserves_metadata() {
+        use hbb_common::rendezvous_proto::register_pk_response::Result::*;
+        let fixture = super::test_support::TestDatabase::new().await;
+        let db = &fixture.db;
+        let guid = db
+            .insert_peer("123456789", b"machine", b"key", "{}")
+            .await
+            .unwrap();
+        let mut connection = db.pool.get().await.unwrap();
+        sqlx::query("update peer set user=?, status=0, note='device note' where guid=?")
+            .bind(b"user".as_slice())
+            .bind(&guid)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+        drop(connection);
+        assert_eq!(
+            db.change_id(&guid, "123456789", "Custom-ID", b"wrong")
+                .await
+                .unwrap(),
+            UUID_MISMATCH
+        );
+        assert_eq!(
+            db.change_id(&guid, "123456789", "Custom-ID", b"machine")
+                .await
+                .unwrap(),
+            OK
+        );
+        assert!(db.get_peer("123456789").await.unwrap().is_none());
+        let peer = db.get_peer("Custom-ID").await.unwrap().unwrap();
+        assert_eq!(peer.guid, guid);
+        assert_eq!(peer.uuid, b"machine");
+        assert_eq!(peer.pk, b"key");
+        assert_eq!(peer.info, "{}");
+        assert_eq!(peer.user, Some(b"user".to_vec()));
+        assert_eq!(peer.status, Some(0));
+        let note: String = sqlx::query_scalar("select note from peer where guid=?")
+            .bind(&guid)
+            .fetch_one(&mut *db.pool.get().await.unwrap())
+            .await
+            .unwrap();
+        assert_eq!(note, "device note");
+    }
+
+    #[tokio::test]
+    async fn change_id_handles_collisions_and_database_errors() {
+        use hbb_common::rendezvous_proto::register_pk_response::Result::*;
+        let fixture = super::test_support::TestDatabase::new().await;
+        let db = &fixture.db;
+        let guid = db
+            .insert_peer("123456789", b"machine", b"key", "{}")
+            .await
+            .unwrap();
+        db.insert_peer("Taken-ID", b"other", b"other key", "{}")
+            .await
+            .unwrap();
+        assert_eq!(
+            db.change_id(&guid, "123456789", "Taken-ID", b"machine")
+                .await
+                .unwrap(),
+            ID_EXISTS
+        );
+        sqlx::query("create trigger fail_rename before update of id on peer begin select raise(abort, 'write failed'); end")
+            .execute(&mut *db.pool.get().await.unwrap()).await.unwrap();
+        assert!(db
+            .change_id(&guid, "123456789", "Custom-ID", b"machine")
+            .await
+            .is_err());
+        assert_eq!(db.get_peer("123456789").await.unwrap().unwrap().guid, guid);
+        assert!(db.get_peer("Custom-ID").await.unwrap().is_none());
     }
 }
